@@ -1,116 +1,100 @@
-
 #include <Servo.h>
 
-int output1Value = 0;
-int sen1Value = 0;
-int sen2Value = 0;
-int const gas_sensor = A1;
-int const LDR = A0;
-int limit = 400;
+// Pin definitions
+const int GAS_SENSOR_PIN = A1;
+const int LDR_PIN = A0;
+const int RELAY_PIN = 13;
+const int SERVO_PIN = 7;
+const int BUZZER_PIN = 8;
+const int PIR_PIN = 9;
+const int FAN_CONTROL_PIN = 10;
+const int ULTRASONIC_PIN = 6;
 
-long readUltrasonicDistance(int triggerPin, int echoPin)
-{
-  pinMode(triggerPin, OUTPUT);  // Clear the trigger
-  digitalWrite(triggerPin, LOW);
+// Threshold values
+const int LIGHT_THRESHOLD = 500;
+const int GAS_THRESHOLD = 400;
+const int DISTANCE_THRESHOLD = 100;
+
+// Other constants
+const unsigned long MOTION_DELAY = 5000; // 5 seconds
+const int BUZZER_FREQUENCY = 650;
+
+Servo doorServo;
+
+void setup() {
+  Serial.begin(9600);
+  
+  pinMode(LDR_PIN, INPUT);
+  pinMode(GAS_SENSOR_PIN, INPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(PIR_PIN, INPUT);
+  pinMode(FAN_CONTROL_PIN, OUTPUT);
+  
+  doorServo.attach(SERVO_PIN, 500, 2500);
+  
+  Serial.println("Smart Home System Initialized");
+}
+
+long readUltrasonicDistance(int pin) {
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, LOW);
   delayMicroseconds(2);
-// Sets the trigger pin to HIGH state for 10 microseconds
-  digitalWrite(triggerPin, HIGH);
+  digitalWrite(pin, HIGH);
   delayMicroseconds(10);
-  digitalWrite(triggerPin, LOW);
-  pinMode(echoPin, INPUT);
-  // Reads the echo pin, and returns the sound wave travel time in microseconds
-  return pulseIn(echoPin, HIGH);
+  digitalWrite(pin, LOW);
+  pinMode(pin, INPUT);
+  return pulseIn(pin, HIGH);
 }
 
-Servo servo_7;
-
-void setup()
-{
-  Serial.begin(9600);		//initialize serial communication
-  pinMode(A0, INPUT);		//LDR
-  pinMode(A1,INPUT);      	//gas sensor
-  pinMode(13, OUTPUT);		//connected to relay
-  servo_7.attach(7, 500, 2500); //servo motor
-
-  pinMode(8,OUTPUT);     	//signal to piezo buzzer
-  pinMode(9, INPUT);		//signal to PIR	
-  pinMode(10, OUTPUT);		//signal to npn as switch
-  
- 
+void controlLight() {
+  int lightLevel = analogRead(LDR_PIN);
+  bool isLightOn = lightLevel > LIGHT_THRESHOLD;
+  digitalWrite(RELAY_PIN, !isLightOn); // Relay is active LOW
+  Serial.print("Light: ");
+  Serial.print(isLightOn ? "OFF" : "ON");
+  Serial.print(" (Level: ");
+  Serial.print(lightLevel);
+  Serial.println(")");
 }
 
-void loop()
-{
-  
-     //------light intensity control------//
-//-------------------------------------------------------------- 
-    int val1 = analogRead(LDR);
-  if (val1 > 500) 
-  	{
-    	digitalWrite(13, LOW);
-    Serial.print("Bulb ON = ");
-    Serial.print(val1);
-  	} 
-  else 
-  	{
-    	digitalWrite(13, HIGH);
-     Serial.print("Bulb OFF = ");
-    Serial.print(val1);
-  	}
-
-//--------------------------------------------------------------  
-        //------ fan control --------// 
-//--------------------------------------------------------------
-  sen2Value = digitalRead(9);
-  if (sen2Value == 0) 
-  	{
-    	digitalWrite(10, LOW); //npn as switch OFF
-    	
-    Serial.print("     || NO Motion Detected    " );
-  	}
- 
-  if (sen2Value == 1) 
-  	{
-    	digitalWrite(10, HIGH);//npn as switch ON
-    delay(5000);
-    	
-     Serial.print(" 	   || Motion Detected!      " );
-  	}
-  
-  
-//---------------------------------------------------------------
-       // ------- Gas Sensor --------//
-//---------------------------------------------------------------
-int val = analogRead(gas_sensor);      //read sensor value
-  Serial.print("|| Gas Sensor Value = ");
-  Serial.print(val);				   //Printing in serial monitor
-
-  if (val > limit)
-  	{
-    	tone(8, 650);
-  	}
- 	delay(300);
- 	noTone(8);
-
- //-------------------------------------------------------------- 
-      //-------  servo motor  ---------//
- //------------------------------------------------------------- 
-  sen1Value = 0.01723 * readUltrasonicDistance(6, 6);
-
-  if (sen1Value < 100) 
-  	{
-    	servo_7.write(90);
-    Serial.print(" 	  || Door Open!  ; Distance = ");
-    Serial.print(sen1Value);
-   Serial.print("\n");
- 
-  	} 
-  else 
-  	{
-    	servo_7.write(0);
-    Serial.print(" 	  || Door Closed! ; Distance =  ");
-    Serial.print(sen1Value);
-    Serial.print("\n");
+void controlFan() {
+  bool motionDetected = digitalRead(PIR_PIN);
+  digitalWrite(FAN_CONTROL_PIN, motionDetected);
+  Serial.print("Fan: ");
+  Serial.println(motionDetected ? "ON (Motion Detected)" : "OFF (No Motion)");
+  if (motionDetected) {
+    delay(MOTION_DELAY);
   }
-  delay(10); // Delay a little bit to improve simulation performance
+}
+
+void checkGasLevel() {
+  int gasLevel = analogRead(GAS_SENSOR_PIN);
+  Serial.print("Gas Level: ");
+  Serial.println(gasLevel);
+  if (gasLevel > GAS_THRESHOLD) {
+    tone(BUZZER_PIN, BUZZER_FREQUENCY, 300);
+    Serial.println("WARNING: High Gas Level Detected!");
+  }
+}
+
+void controlDoor() {
+  float distance = 0.01723 * readUltrasonicDistance(ULTRASONIC_PIN);
+  bool isDoorOpen = distance < DISTANCE_THRESHOLD;
+  doorServo.write(isDoorOpen ? 90 : 0);
+  Serial.print("Door: ");
+  Serial.print(isDoorOpen ? "Open" : "Closed");
+  Serial.print(" (Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm)");
+}
+
+void loop() {
+  Serial.println("\n--- Smart Home Status Update ---");
+  controlLight();
+  controlFan();
+  checkGasLevel();
+  controlDoor();
+  Serial.println("--------------------------------");
+  delay(1000); // Update every second
 }
